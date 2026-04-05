@@ -1,9 +1,13 @@
 #ifndef GESCOM_H
 #define GESCOM_H
 
-
-int execComInt(int N, char **P);
-int execComExt(char **P);
+/* Met à jour les commandes internes (vide pour notre test) */
 void majComInt(void);
 
-#endif
+/* Exécute une commande interne (renverra 0 pour dire qu'elle ne connaît rien) */
+int execComInt(int n, char **mots);
+
+/* Exécute une commande externe basique via execvp */
+void execComExt(char **mots);
+
+#endif /* GESCOM_H */
