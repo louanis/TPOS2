@@ -62,42 +62,39 @@ int analyseCom(char *b) {
 int gerer_commandes_reseau(int n, char **mots) {
     if (mots == NULL || mots[0] == NULL) return 0;
     
-    // Commandes beuip
     if (strcmp(mots[0], "beuip") == 0) {
-        if (n > 1 && strcmp(mots[1], "start") == 0 && n == 3) {
+        if (n == 3 && strcmp(mots[1], "start") == 0) {
             beuip_start(mots[2]);
-        } else if (n > 1 && strcmp(mots[1], "stop") == 0) {
+        } 
+        else if (n == 2 && strcmp(mots[1], "stop") == 0) {
             beuip_stop();
-        } else if (n > 1 && strcmp(mots[1], "ls") == 0 && n == 3) {
-            demandeListe(mots[2]);
-        } else if (n > 1 && strcmp(mots[1], "get") == 0 && n == 4) {
-            demandeFichier(mots[2], mots[3]);
-        } else {
-            printf("Usage:\n beuip start <pseudo>\n beuip stop\n beuip ls <pseudo>\n beuip get <pseudo> <fichier>\n");
+        } 
+        else if (n == 2 && strcmp(mots[1], "list") == 0) {
+            commande('3', NULL, NULL); // Appel de liste
+        } 
+        else if (n >= 4 && strcmp(mots[1], "message") == 0) {
+            // Reconstitution du message
+            char msg[512] = "";
+            for(int i = 3; i < n; i++) {
+                strcat(msg, mots[i]);
+                if(i < n - 1) strcat(msg, " ");
+            }
+            
+            if (strcmp(mots[2], "all") == 0) {
+                commande('5', msg, NULL);
+            } else {
+                commande('4', msg, mots[2]);
+            }
         }
-        return 1;
-    }
-
-    // Commandes mess
-    if (strcmp(mots[0], "mess") == 0) {
-        if (n == 2 && strcmp(mots[1], "liste") == 0) {
-            commande('3', NULL, NULL);
-        } else if (n >= 3 && strcmp(mots[1], "all") == 0) {
-            char msg[512] = "";
-            for(int i = 2; i < n; i++) {
-                strcat(msg, mots[i]);
-                if(i < n - 1) strcat(msg, " ");
-            }
-            commande('5', msg, NULL);
-        } else if (n >= 3) {
-            char msg[512] = "";
-            for(int i = 2; i < n; i++) {
-                strcat(msg, mots[i]);
-                if(i < n - 1) strcat(msg, " ");
-            }
-            commande('4', msg, mots[1]);
-        } else {
-            printf("Usage: mess liste | mess all <msg> | mess <pseudo> <msg>\n");
+        // Bonus TP3
+        else if (n == 3 && strcmp(mots[1], "ls") == 0) {
+            demandeListe(mots[2]);
+        } 
+        else if (n == 4 && strcmp(mots[1], "get") == 0) {
+            demandeFichier(mots[2], mots[3]);
+        } 
+        else {
+            printf("Usage: beuip start <user> | beuip stop | beuip list | beuip message <user/all> <msg>\n");
         }
         return 1;
     }
@@ -157,5 +154,6 @@ int main(void) {
     beuip_stop(); // fermer le serveur quand on quitte
     printf("Bye !\n");
     write_history(".biceps_history");
+    clear_history();
     return 0;
 }

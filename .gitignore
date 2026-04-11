@@ -1,4 +1,14 @@
+# Fichiers objets
 *.o
-a
-aa
+
+# Exécutables
+biceps
+biceps-memory-leaks
+
+# Historique Readline
 .biceps_history
+
+# Dossiers générés par le programme ou les tests
+reppub/
+test_alice/
+test_bob/

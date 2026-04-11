@@ -14,8 +14,12 @@
 #include <fcntl.h>
 #include "creme.h"
 #define PORT 9998
+#define BCAST_ADDR "192.168.88.255"
 #define LBUF 512
 #define LPSEUDO 23
+
+char mon_pseudo_global[64];
+char mon_ip_globale[16] = "127.0.0.1"; // Valeur par défaut
 
 /* --- Structure de la liste chainee --- */
 struct elt {
@@ -93,47 +97,35 @@ void supprimeElt(char *adip) {
 
 void listeElts(void) {
     pthread_mutex_lock(&mutex_liste);
+    
+    // On s'affiche soi-même
+    printf("%s : %s\n", mon_ip_globale, mon_pseudo_global);
+
+    // On affiche tous les autres
     struct elt *cur = liste;
-    int count = 0;
-    printf("\n--- Liste des utilisateurs presents ---\n");
     while (cur) {
-        printf("- %s (%s)\n", cur->nom, cur->adip);
+        printf("%s : %s\n", cur->adip, cur->nom);
         cur = cur->next;
-        count++;
     }
-    if (count == 0) printf("(Aucun autre utilisateur sur le reseau)\n");
-    printf("---------------------------------------\n");
+    
     pthread_mutex_unlock(&mutex_liste);
 }
-
 /* ========================================================= */
 /* BROADCAST DYNAMIQUE                       */
 /* ========================================================= */
 
 void envoyer_broadcast(char octet1, const char *pseudo) {
-    struct ifaddrs *ifaddr, *ifa;
-    if (getifaddrs(&ifaddr) == -1) return;
-
     char msg[LBUF];
     sprintf(msg, "%cBEUIP%s", octet1, pseudo);
     int len = 6 + strlen(pseudo) + 1;
 
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET || ifa->ifa_broadaddr == NULL) 
-            continue;
-
-        char host[NI_MAXHOST];
-        getnameinfo(ifa->ifa_broadaddr, sizeof(struct sockaddr_in), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-
-        if (strcmp(host, "127.0.0.1") != 0 && strcmp(host, "0.0.0.0") != 0) {
-            struct sockaddr_in bcast_addr;
-            bcast_addr.sin_family = AF_INET;
-            bcast_addr.sin_port = htons(PORT);
-            bcast_addr.sin_addr.s_addr = inet_addr(host);
-            sendto(sockfd_udp, msg, len, 0, (struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
-        }
-    }
-    freeifaddrs(ifaddr);
+    struct sockaddr_in bcast_addr;
+    memset(&bcast_addr, 0, sizeof(bcast_addr));
+    bcast_addr.sin_family = AF_INET;
+    bcast_addr.sin_port = htons(PORT);
+    bcast_addr.sin_addr.s_addr = inet_addr(BCAST_ADDR); // Utilisation de votre #define
+    
+    sendto(sockfd_udp, msg, len, 0, (struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
 }
 
 /* ========================================================= */
@@ -143,6 +135,7 @@ void envoyer_broadcast(char octet1, const char *pseudo) {
 void *serveur_udp(void *p) {
     (void)p;
     struct sockaddr_in cliaddr;
+    memset(&cliaddr, 0, sizeof(cliaddr));
     socklen_t len = sizeof(cliaddr);
     char buffer[LBUF];
 
@@ -155,7 +148,7 @@ void *serveur_udp(void *p) {
         char ip[16];
         inet_ntop(AF_INET, &cliaddr.sin_addr, ip, sizeof(ip));
 
-        if (strcmp(ip, "127.0.0.1") == 0) continue; // ignorer nos messages
+        // if (strcmp(ip, "127.0.0.1") == 0) continue; // ignorer nos messages
 
         switch (code) {
             case '1':
@@ -233,6 +226,7 @@ void envoiContenu(int fd) {
 void *serveur_tcp(void *rep) {
     (void)rep;
     struct sockaddr_in cliaddr;
+    memset(&cliaddr, 0, sizeof(cliaddr));
     socklen_t len = sizeof(cliaddr);
 
     while (1) {
@@ -278,6 +272,25 @@ int beuip_start(const char *pseudo) {
     bind(sockfd_tcp, (struct sockaddr *)&addr, sizeof(addr));
     listen(sockfd_tcp, 5);
 
+    // Récupération de adresse IP sur le réseau
+    int sock_test = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in test_addr;
+    memset(&test_addr, 0, sizeof(test_addr));
+    test_addr.sin_family = AF_INET;
+    test_addr.sin_port = htons(53); // Port DNS (au hasard)
+    
+    // On simule une route vers l'extérieur pour forcer le choix de la carte réseau
+    test_addr.sin_addr.s_addr = inet_addr("8.8.8.8"); 
+    
+    connect(sock_test, (struct sockaddr *)&test_addr, sizeof(test_addr));
+    
+    struct sockaddr_in my_addr;
+    memset(&my_addr, 0, sizeof(my_addr));
+    socklen_t my_len = sizeof(my_addr);
+    getsockname(sock_test, (struct sockaddr *)&my_addr, &my_len);
+    inet_ntop(AF_INET, &my_addr.sin_addr, mon_ip_globale, sizeof(mon_ip_globale));
+    close(sock_test);
+
     // lancement threads
     pthread_create(&tid_udp, NULL, serveur_udp, NULL);
     pthread_create(&tid_tcp, NULL, serveur_tcp, "reppub");
@@ -299,6 +312,10 @@ int beuip_stop(void) {
     
     pthread_cancel(tid_udp);
     pthread_cancel(tid_tcp);
+
+    pthread_join(tid_udp, NULL);
+    pthread_join(tid_tcp, NULL);
+
     close(sockfd_udp);
     close(sockfd_tcp);
     
@@ -344,6 +361,7 @@ void commande(char octet1, char *message, char *pseudo) {
 
         if (strlen(ip_cible) > 0) {
             struct sockaddr_in dest;
+            memset(&dest, 0, sizeof(dest));
             dest.sin_family = AF_INET;
             dest.sin_port = htons(PORT);
             dest.sin_addr.s_addr = inet_addr(ip_cible);
@@ -400,6 +418,7 @@ void demandeListe(char *pseudo) {
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(PORT);
     addr.sin_addr.s_addr = inet_addr(ip_cible);
@@ -440,6 +459,7 @@ void demandeFichier(char *pseudo, char *nomfic) {
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(PORT);
     addr.sin_addr.s_addr = inet_addr(ip_cible);
